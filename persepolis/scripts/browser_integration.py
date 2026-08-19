@@ -227,7 +227,7 @@ def getIntermediaryPath():
     elif os_type == OS.WINDOWS:
         intermediary, logg_message = findExternalAppPath('PersepolisBI')
 
-    logg_message = "Persepolis intermediary path: " + logg_message
+    logg_message = "Persepolis intermediary path: " + str(logg_message)
     return intermediary, logg_message
 
 
