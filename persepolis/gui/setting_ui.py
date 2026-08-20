@@ -181,6 +181,22 @@ class Setting_Ui(QWidget):
 
         download_options_tab_verticalLayout.addLayout(chunk_size_horizontalLayout)
 
+        # multi_interface_ips
+        multi_interface_horizontalLayout = QHBoxLayout()
+
+        self.multi_interface_label = QLabel(self.download_options_tab)
+        multi_interface_horizontalLayout.addWidget(self.multi_interface_label)
+
+        self.multi_interface_lineEdit = QLineEdit(self.download_options_tab)
+        self.multi_interface_lineEdit.setPlaceholderText("e.g. 192.168.1.23, 192.168.42.100")
+        multi_interface_horizontalLayout.addWidget(self.multi_interface_lineEdit)
+
+        self.multi_interface_comboBox = QComboBox(self.download_options_tab)
+        self.multi_interface_comboBox.setEditable(False)
+        multi_interface_horizontalLayout.addWidget(self.multi_interface_comboBox)
+
+        download_options_tab_verticalLayout.addLayout(multi_interface_horizontalLayout)
+
         # wait_queue
         wait_queue_horizontalLayout = QHBoxLayout()
 
@@ -581,6 +597,7 @@ class Setting_Ui(QWidget):
             QCoreApplication.translate("setting_ui_tr", "<html><head/><body><p>Using multiple connections can help speed up your download.</p></body></html>"))
 
         self.chunk_size_label.setText(QCoreApplication.translate("setting_ui_tr", "Chunk size(KiB): "))
+        self.multi_interface_label.setText(QCoreApplication.translate("setting_ui_tr", "Interface IPs (multi-link downloads): "))
         self.chunk_size_label.setToolTip(
             QCoreApplication.translate("setting_ui_tr", "It is python requests library chunk size. Do not change this If you are not familiar with it."))
 

@@ -29,6 +29,27 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
+class SourceAddressAdapter(HTTPAdapter):
+    """
+    Binds outgoing connections to a specific local network interface (by
+    local IP address) instead of the OS default route. Used to split a
+    single download's segments across multiple physical interfaces
+    (e.g. WiFi + USB tether) in parallel for combined throughput.
+    """
+
+    def __init__(self, source_address, **kwargs):
+        self.source_address = (source_address, 0)
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs['source_address'] = self.source_address
+        return super().init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        kwargs['source_address'] = self.source_address
+        return super().proxy_manager_for(*args, **kwargs)
+
+
 class Download():
     def __init__(self, add_link_dictionary, main_window, gid):
         self.downloaded_size = 0
@@ -90,6 +111,78 @@ class Download():
         self.thread_list = []
         # this dictionary contains information about each part is downloaded by which thread.
         self.part_thread_dict = {}
+
+        # optional: split this download's segments across multiple local
+        # network interfaces (e.g. WiFi + USB tether) for combined
+        # throughput. Configured in Preferences > Download options as a
+        # comma-separated list of local IPs. Empty/unset = normal single
+        # shared-session behavior (unchanged).
+        raw_ips = str(main_window.persepolis_setting.value('settings/multi-interface-ips', '')).strip()
+        if raw_ips:
+            self.source_addresses = [ip.strip() for ip in raw_ips.split(',') if ip.strip()]
+        else:
+            self.source_addresses = None
+        self.thread_sessions = {}
+
+    # build (or return cached) requests session for a specific download
+    # thread. If self.source_addresses is set, each thread's session is
+    # bound to one local interface IP, round-robined by thread_number, so
+    # segments are actually sent out over different physical connections in
+    # parallel. If unset, falls back to the single shared self.requests_session
+    # (stock behavior).
+    def getThreadSession(self, thread_number):
+        if not self.source_addresses:
+            return self.requests_session
+
+        if thread_number in self.thread_sessions:
+            return self.thread_sessions[thread_number]
+
+        session = requests.Session()
+
+        retry_strategy = Retry(
+            total=self.retry,
+            backoff_factor=self.retry_wait,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+
+        source_ip = self.source_addresses[thread_number % len(self.source_addresses)]
+        adapter = SourceAddressAdapter(source_ip, max_retries=retry_strategy)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+
+        # mirror the same proxy/auth/cookie/header/user-agent setup as createSession()
+        if self.ip:
+            ip_port = '://' + str(self.ip) + ":" + str(self.port)
+            if self.proxy_user:
+                ip_port = ('://' + self.proxy_user + ':' + self.proxy_passwd + '@' + ip_port)
+            if self.proxy_type == 'socks5':
+                ip_port = 'socks5' + ip_port
+            else:
+                ip_port = 'http' + ip_port
+            proxies = {'http': ip_port, 'https': ip_port}
+            session.proxies.update(proxies)
+
+        if self.download_user:
+            session.auth = (self.download_user, self.download_passwd)
+
+        if self.load_cookies:
+            jar = readCookieJar(self.load_cookies)
+            if jar:
+                session.cookies = jar
+
+        if self.referer:
+            session.headers.update({'referer': self.referer})
+
+        if self.user_agent:
+            session.headers.update({'user-agent': self.user_agent})
+
+        if self.header:
+            dict_ = headerToDict(self.header)
+            session.headers.update(dict_)
+
+        self.thread_sessions[thread_number] = session
+        return session
 
     # create requests session
     def createSession(self):
@@ -621,12 +714,20 @@ class Download():
                     # specify the start and end of the part for request header.
                     chunk_headers = {'Range': 'bytes=%d-%d' % (start, end)}
 
+                    # get this thread's session (bound to a specific local
+                    # interface if multi-interface IPs are configured,
+                    # otherwise the single shared session as before).
+                    thread_session = self.getThreadSession(thread_number)
+
                     # request the specified part and get into variable
                     # When stream=True is set on the request, this avoids
                     # reading the content at once into memory for large responses
-                    self.requests_session.headers.update(chunk_headers)
-                    response = self.requests_session.get(
-                        self.link, allow_redirects=True, stream=True,
+                    # NOTE: headers are passed per-request rather than mutated
+                    # on the session object, since the session may be shared
+                    # across concurrent threads (mutating shared session headers
+                    # from multiple threads at once is a race condition).
+                    response = thread_session.get(
+                        self.link, headers=chunk_headers, allow_redirects=True, stream=True,
                         timeout=self.timeout, verify=self.check_certificate)
 
                     # open the file and write the content of the html page

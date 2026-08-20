@@ -31,6 +31,10 @@ from persepolis.scripts import startup
 from persepolis.scripts import logger
 import platform
 import os
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 home_address = os.path.expanduser("~")
 os_type = platform.system()
@@ -77,6 +81,11 @@ class PreferencesWindow(Setting_Ui):
             int(self.persepolis_setting.value('max-tries')))
         self.chunk_size_spinBox.setValue(
             int(self.persepolis_setting.value('chunk-size')))
+        self.multi_interface_lineEdit.setText(
+            str(self.persepolis_setting.value('multi-interface-ips', '')))
+        self.populateInterfaceComboBox()
+        self.multi_interface_comboBox.activated.connect(
+            self.addInterfaceToField)
         self.wait_spinBox.setValue(
             int(self.persepolis_setting.value('retry-wait')))
         self.time_out_spinBox.setValue(
@@ -438,6 +447,63 @@ class PreferencesWindow(Setting_Ui):
         self.resize(size)
         self.move(position)
 
+    # find local network interfaces and their IPv4 addresses, and fill
+    # the multi_interface_comboBox with them, so the user can pick
+    # interfaces to add instead of typing IPs by hand. This combobox is
+    # just a picker - index 0 is always a placeholder, and picking an
+    # entry appends its IP to multi_interface_lineEdit (the actual field)
+    # then resets back to the placeholder.
+    def populateInterfaceComboBox(self):
+        self.multi_interface_comboBox.clear()
+        self.multi_interface_comboBox.addItem('Add interface...', None)
+
+        if psutil is None:
+            return
+
+        try:
+            stats = psutil.net_if_stats()
+            for name, addrs in psutil.net_if_addrs().items():
+                up = stats[name].isup if name in stats else False
+                for addr in addrs:
+                    if getattr(addr.family, 'name', '') == 'AF_INET':
+                        display_text = '{} - {} ({})'.format(
+                            addr.address, name, 'up' if up else 'down')
+                        # store the raw IP as item data, so we can use it
+                        # for the actual setting value without parsing the
+                        # display label back apart.
+                        self.multi_interface_comboBox.addItem(
+                            display_text, addr.address)
+        except Exception:
+            # interface enumeration is best-effort; if it fails for any
+            # reason (permissions, unusual platform, etc.) the field
+            # still works as a plain manually-typed field.
+            pass
+
+    # run this when the user picks an interface from the dropdown.
+    # appends its IP to the comma-separated list already in
+    # multi_interface_lineEdit (instead of overwriting it, since more than
+    # one interface is usually wanted here), then resets the dropdown back
+    # to its placeholder so it's ready to add another.
+    def addInterfaceToField(self, index):
+        ip = self.multi_interface_comboBox.itemData(index)
+
+        # reset to placeholder first; block signals so this reset itself
+        # doesn't re-trigger addInterfaceToField.
+        self.multi_interface_comboBox.blockSignals(True)
+        self.multi_interface_comboBox.setCurrentIndex(0)
+        self.multi_interface_comboBox.blockSignals(False)
+
+        if not ip:
+            return
+
+        current_text = self.multi_interface_lineEdit.text().strip()
+        current_ips = [x.strip() for x in current_text.split(',') if x.strip()]
+
+        if ip not in current_ips:
+            current_ips.append(ip)
+
+        self.multi_interface_lineEdit.setText(', '.join(current_ips))
+
     # run this method if user doubleclicks on an item in shortcut_table
     def showCaptureKeyboardWindow(self):
 
@@ -706,6 +772,7 @@ class PreferencesWindow(Setting_Ui):
 
         self.tries_spinBox.setValue(int(self.setting_dict['max-tries']))
         self.chunk_size_spinBox.setValue(int(self.setting_dict['chunk-size']))
+        self.multi_interface_lineEdit.setText(str(self.setting_dict['multi-interface-ips']))
         self.wait_spinBox.setValue(int(self.setting_dict['retry-wait']))
         self.time_out_spinBox.setValue(int(self.setting_dict['timeout']))
         self.connections_spinBox.setValue(
@@ -860,6 +927,8 @@ class PreferencesWindow(Setting_Ui):
             'max-tries', self.tries_spinBox.value())
         self.persepolis_setting.setValue(
             'chunk-size', self.chunk_size_spinBox.value())
+        self.persepolis_setting.setValue(
+            'multi-interface-ips', self.multi_interface_lineEdit.text().strip())
         self.persepolis_setting.setValue(
             'retry-wait', self.wait_spinBox.value())
         self.persepolis_setting.setValue(

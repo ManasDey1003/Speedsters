@@ -248,6 +248,7 @@ def returnDefaultSettings():
                             'show-menubar': 'no', 'show-sidepanel': 'yes', 'notification': 'QT notification', 'after-dialog': 'yes',
                             'tray-icon': 'yes', 'browser-persepolis': 'yes', 'hide-window': 'yes', 'max-tries': 5, 'retry-wait': 5, 'timeout': 10,
                             'connections': 64, 'download_path': download_path, 'sound': 'yes', 'sound-volume': 100, 'chunk-size': 100,
+                            'multi-interface-ips': '',
                             'style': style, 'color-scheme': color_scheme, 'icons': icons, 'font': 'Ubuntu', 'font-size': 9,
                             'video_finder/max_links': '3', 'shortcuts/delete_shortcut': delete_shortcut, 'shortcuts/remove_shortcut': remove_shortcut,
                             'shortcuts/add_new_download_shortcut': add_new_download_shortcut, 'shortcuts/import_text_shortcut': import_text_shortcut,
